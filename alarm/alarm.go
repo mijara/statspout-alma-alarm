@@ -9,30 +9,35 @@ import (
 	"github.com/mijara/statspout/common"
 	"github.com/mijara/statspout/log"
 	"github.com/mijara/statspoutalarm/notifier"
+	"flag"
 )
 
-type Trigger struct {
-	CPU bool
-	MEM bool
+type Cooldown struct {
+	CPU int
+	MEM int
 }
 
 type AlarmDetector struct {
 	influx *common.InfluxDB
-	triggered map[string]*Trigger
+	triggered map[string]*Cooldown
+	cooldownCycles int
 }
 
 type AlarmDetectorOpts struct {
 	*common.InfluxOpts
+	cooldownCycles int
 }
 
 func NewAlarmDetector(opts *AlarmDetectorOpts) (*AlarmDetector, error) {
-	ad := &AlarmDetector{}
+	ad := &AlarmDetector{
+		cooldownCycles: opts.cooldownCycles,
+	}
 	influx, err := common.NewInfluxDB(opts.InfluxOpts)
 	if err != nil {
 		return nil, err
 	}
 	ad.influx = influx
-	ad.triggered = make(map[string]*Trigger)
+	ad.triggered = make(map[string]*Cooldown)
 	return ad, nil
 }
 
@@ -68,25 +73,27 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	messages := make([]string, 0)
 
 	// this object tells us if the warning was already raised for each resource.
-	triggered := ad.GetTrigger(stats.Name)
+	triggered := ad.GetCooldown(stats.Name)
 
 	// only raise warning if the CPU is exceeded and it is not triggered at the moment.
-	if cpuExceeded && !triggered.CPU {
+	if cpuExceeded && triggered.CPU <= 0 {
 		messages = append(messages,
 			fmt.Sprintf("Max %f%% CPU exceeded! :: ", cpuMax) + stats.String())
-		triggered.CPU = true
-	} else {
-		triggered.CPU = false
+		triggered.CPU = ad.cooldownCycles
+	} else if triggered.CPU > 0 {
+		triggered.CPU--
 	}
 
 	// only raise warning if the MEM is exceeded and it is not triggered at the moment.
-	if memExceeded && !triggered.MEM {
+	if memExceeded && triggered.MEM <= 0 {
 		messages = append(messages,
 			fmt.Sprintf("Max %f%% MEM exceeded! :: ", memMax) + stats.String())
-		triggered.MEM = true
-	} else {
-		triggered.MEM = false
+		triggered.MEM = ad.cooldownCycles
+	} else if triggered.MEM > 0 {
+		triggered.MEM--
 	}
+
+	fmt.Println(triggered)
 
 	// if there's any message, send the batch of notifications.
 	if len(messages) > 0 {
@@ -100,10 +107,10 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	return nil
 }
 
-func (ad *AlarmDetector) GetTrigger(name string) *Trigger {
+func (ad *AlarmDetector) GetCooldown(name string) *Cooldown {
 	trigger, ok := ad.triggered[name]
 	if !ok {
-		ad.triggered[name] = &Trigger{CPU: false, MEM: false}
+		ad.triggered[name] = &Cooldown{CPU: 0, MEM: 0}
 		trigger = ad.triggered[name]
 	}
 
@@ -114,5 +121,12 @@ func CreateAlarmDetectorOpts() *AlarmDetectorOpts {
 	o := &AlarmDetectorOpts{
 		InfluxOpts: common.CreateInfluxDBOpts(),
 	}
+
+	flag.IntVar(&o.cooldownCycles,
+		"alarm.cycles",
+		5,
+		"Container push cycles to skip after a warning.",
+	)
+
 	return o
 }
