@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/mijara/statspout/opts"
-	"github.com/mijara/statspout/common"
 	"github.com/mijara/statspout"
+	"github.com/mijara/statspout/common"
+	"github.com/mijara/statspout/opts"
 	"github.com/mijara/statspoutalarm/alarm"
 )
 

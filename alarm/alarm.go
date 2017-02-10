@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/mijara/statspout/stats"
-	"github.com/mijara/statspout/repo"
 	"github.com/mijara/statspout/common"
 	"github.com/mijara/statspout/log"
+	"github.com/mijara/statspout/repo"
+	"github.com/mijara/statspout/stats"
 	"github.com/mijara/statspoutalarm/notifier"
 )
 
