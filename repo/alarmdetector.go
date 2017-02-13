@@ -177,7 +177,7 @@ func CreateAlarmDetectorOpts() *AlarmDetectorOpts {
 		"Broker URI. See https://www.rabbitmq.com/uri-spec.html")
 
 	flag.StringVar(&o.RabbitMQ.Queue,
-		"alarm.rabbitmq.queu",
+		"alarm.rabbitmq.queue",
 		"alarms",
 		"Queue for alarms raised.")
 
