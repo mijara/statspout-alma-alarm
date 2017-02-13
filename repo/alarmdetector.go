@@ -114,8 +114,7 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 
 	// only raise warning if the CPU is exceeded and it is not triggered at the moment.
 	if cpuExceeded && !triggered.CPU {
-		messages = append(messages,
-			fmt.Sprintf("Max %f%% CPU exceeded! :: ", cpuMax)+stats.String())
+		messages = append(messages, fmt.Sprintf("Max %f%% CPU exceeded: ", cpuMax)+stats.String())
 		triggered.CPU = true
 	} else {
 		triggered.CPU = false
@@ -123,8 +122,7 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 
 	// only raise warning if the MEM is exceeded and it is not triggered at the moment.
 	if memExceeded && !triggered.MEM {
-		messages = append(messages,
-			fmt.Sprintf("Max %f%% MEM exceeded! :: ", memMax)+stats.String())
+		messages = append(messages, fmt.Sprintf("Max %f%% MEM exceeded: ", memMax)+stats.String())
 		triggered.MEM = true
 	} else {
 		triggered.MEM = false
