@@ -12,20 +12,19 @@ import (
 	"github.com/mijara/statspoutalarm/notifier"
 )
 
-// Trigger represents a state of a container, whether it's alarm has been triggered or not.
-type Trigger struct {
-	// CPU tells us if the cpu alarm has been triggered.
-	CPU bool
-
-	// MEM tells us if the mem alarm has been triggered.
-	MEM bool
+type Cooldown struct {
+	CPU int
+	MEM int
 }
 
 // AlarmDetector is a repository that raises alarms if certain maximums are exceeded. It will
 // bypass all stats to InfluxDB.
 type AlarmDetector struct {
-	influx    *common.InfluxDB
-	triggered map[string]*Trigger
+	influx *common.InfluxDB
+
+	cooldown       map[string]*Cooldown
+	cooldownCycles int
+
 	notifiers []notifier.Notifier
 }
 
@@ -40,6 +39,8 @@ type AlarmDetectorOpts struct {
 	}
 
 	Stdout bool
+
+	CooldownCycles int
 }
 
 // NewAlarmDetector will create a new instance of the AlarmDetector, and will initialize InfluxDB
@@ -51,9 +52,10 @@ func NewAlarmDetector(opts *AlarmDetectorOpts) (*AlarmDetector, error) {
 	}
 
 	ad := &AlarmDetector{
-		notifiers: make([]notifier.Notifier, 0),
-		influx:    influx,
-		triggered: make(map[string]*Trigger),
+		notifiers:      make([]notifier.Notifier, 0),
+		influx:         influx,
+		cooldown:       make(map[string]*Cooldown),
+		cooldownCycles: opts.CooldownCycles,
 	}
 
 	if opts.RabbitMQ.Enabled {
@@ -81,8 +83,8 @@ func (ad *AlarmDetector) Clear(name string) {
 func (ad *AlarmDetector) Close() {
 	ad.influx.Close()
 
-	for _, notifier := range ad.notifiers {
-		notifier.Close()
+	for _, n := range ad.notifiers {
+		n.Close()
 	}
 }
 
@@ -114,22 +116,34 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	messages := make([]string, 0)
 
 	// this object tells us if the warning was already raised for each resource.
-	triggered := ad.GetTrigger(stats.Name)
+	cooldown := ad.GetCooldown(stats.Name)
 
-	// only raise warning if the CPU is exceeded and it is not triggered at the moment.
-	if cpuExceeded && !triggered.CPU {
-		messages = append(messages, fmt.Sprintf("Max %f%% CPU exceeded: ", cpuMax)+stats.String())
-		triggered.CPU = true
+	if cpuExceeded {
+		// only raise warning if CPU is exceeded and the cooldown is 0.
+		if cooldown.CPU <= 0 {
+			messages = append(messages, fmt.Sprintf("Max %.2f%% CPU exceeded: ", cpuMax)+stats.String())
+		}
+		cooldown.CPU = ad.cooldownCycles
 	} else {
-		triggered.CPU = false
+		if cooldown.CPU == 1 {
+			log.Debug.Printf("%s container CPU is normal again: %.2f%%", stats.Name, stats.CpuPercent)
+		}
+
+		cooldown.CPU--
 	}
 
-	// only raise warning if the MEM is exceeded and it is not triggered at the moment.
-	if memExceeded && !triggered.MEM {
-		messages = append(messages, fmt.Sprintf("Max %f%% MEM exceeded: ", memMax)+stats.String())
-		triggered.MEM = true
+	if memExceeded {
+		// only raise warning if MEM is exceeded and the cooldown is 0.
+		if cooldown.MEM <= 0 {
+			messages = append(messages, fmt.Sprintf("Max %.2f%% MEM exceeded: ", memMax)+stats.String())
+		}
+		cooldown.MEM = ad.cooldownCycles
 	} else {
-		triggered.MEM = false
+		if cooldown.MEM == 1 {
+			log.Debug.Printf("%s container MEM is normal again: %.2f%%", stats.Name, stats.MemoryPercent)
+		}
+
+		cooldown.MEM--
 	}
 
 	// if there's any message, send the batch of notifications.
@@ -141,20 +155,20 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 }
 
 // GetTrigger will get or create a trigger of some container.
-func (ad *AlarmDetector) GetTrigger(name string) *Trigger {
-	trigger, ok := ad.triggered[name]
+func (ad *AlarmDetector) GetCooldown(name string) *Cooldown {
+	cooldown, ok := ad.cooldown[name]
 	if !ok {
-		ad.triggered[name] = &Trigger{CPU: false, MEM: false}
-		trigger = ad.triggered[name]
+		ad.cooldown[name] = &Cooldown{CPU: 0, MEM: 0}
+		cooldown = ad.cooldown[name]
 	}
 
-	return trigger
+	return cooldown
 }
 
 func (ad *AlarmDetector) notifyAll(messages []string) {
-	for _, notifier := range ad.notifiers {
-		if notifier != nil {
-			notifier.Notify(messages)
+	for _, n := range ad.notifiers {
+		if n != nil {
+			n.Notify(messages)
 		}
 	}
 }
@@ -164,6 +178,11 @@ func CreateAlarmDetectorOpts() *AlarmDetectorOpts {
 	o := &AlarmDetectorOpts{
 		InfluxOpts: common.CreateInfluxDBOpts(),
 	}
+
+	flag.IntVar(&o.CooldownCycles,
+		"alarm.cycles",
+		10,
+		"Cycles of cooldown after a the detection stopped.")
 
 	flag.BoolVar(&o.Stdout,
 		"alarm.stdout",
