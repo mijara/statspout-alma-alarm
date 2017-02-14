@@ -1,6 +1,9 @@
 package notifier
 
-import "github.com/mijara/statspout/log"
+import (
+	"github.com/mijara/statspout/log"
+	"github.com/mijara/statspoutalarm/detections"
+)
 
 // Stdout is the basic notifier that outputs alarm to Standard output.
 type Stdout struct {
@@ -12,9 +15,9 @@ func NewStdout() *Stdout {
 }
 
 // Notify will print each message.
-func (s *Stdout) Notify(messages []string) {
-	for _, message := range messages {
-		log.Warning.Println(message)
+func (s *Stdout) Notify(detections []*detections.Detection) {
+	for _, d := range detections {
+		log.Warning.Println(d.Message)
 	}
 }
 

@@ -1,8 +1,22 @@
 package notifier
 
 import (
+	"encoding/json"
+	"fmt"
+	"time"
+
 	"github.com/mijara/statspout/log"
+	"github.com/mijara/statspoutalarm/detections"
 	"github.com/streadway/amqp"
+)
+
+type Priority string
+
+// Predefined priority levels.
+const (
+	INFO     = Priority("INFO")
+	CRITICAL = Priority("CRITICAL")
+	WARNING  = Priority("WARNING")
 )
 
 // RabbitMQ is a notifier that sends messages to RabbitMQ.
@@ -10,6 +24,18 @@ type RabbitMQ struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	queue   *amqp.Queue
+}
+
+// Alarm represent and ALMA Alarm for ElasticSearch indexing.
+type Alarm struct {
+	Timestamp     time.Time `json:"timestamp"`
+	Name          string    `json:"name"`
+	Priority      Priority  `json:"priority"`
+	DetectionTime time.Time `json:"detection_time"`
+
+	Body struct {
+		Message string `json:"message"`
+	} `json:"body"`
 }
 
 // NewRabbitMQ initializes a new instance of the RabbitMQ notifier, creating
@@ -48,17 +74,36 @@ func NewRabbitMQ(uri, queueName string) *RabbitMQ {
 }
 
 // Notify sends a each message to a RabbitMQ broker.
-func (rmq *RabbitMQ) Notify(messages []string) {
-	for _, message := range messages {
-		rmq.channel.Publish(
-			"",
-			rmq.queue.Name,
-			false,
-			false,
-			amqp.Publishing{
-				ContentType: "text/plain",
-				Body:        []byte(message),
-			})
+func (rmq *RabbitMQ) Notify(detections []*detections.Detection) {
+	for _, detection := range detections {
+		alarm := Alarm{
+			Timestamp:     detection.Timestamp.UTC(),
+			Name:          fmt.Sprintf("OFFLINE/%s/%s", detection.ContainerName, detection.Resource),
+			Priority:      CRITICAL,
+			DetectionTime: time.Now().UTC(),
+		}
+
+		alarm.Body.Message = detection.Message
+
+		body, err := json.Marshal(alarm)
+		if err != nil {
+			log.Error.Println("error marshaling alarm json: " + err.Error())
+			return
+		}
+
+		fmt.Println(string(body))
+
+		/*
+			rmq.channel.Publish(
+				"",
+				rmq.queue.Name,
+				false,
+				false,
+				amqp.Publishing{
+					ContentType: "text/plain",
+					Body:        body,
+				})
+		*/
 	}
 }
 

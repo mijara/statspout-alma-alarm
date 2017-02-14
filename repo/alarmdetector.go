@@ -9,6 +9,7 @@ import (
 	"github.com/mijara/statspout/log"
 	"github.com/mijara/statspout/repo"
 	"github.com/mijara/statspout/stats"
+	"github.com/mijara/statspoutalarm/detections"
 	"github.com/mijara/statspoutalarm/notifier"
 )
 
@@ -113,7 +114,7 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	memExceeded := memMax > 0 && stats.MemoryPercent > memMax
 
 	// current batch of messages.
-	messages := make([]string, 0)
+	detectionList := make([]*detections.Detection, 0)
 
 	// this object tells us if the warning was already raised for each resource.
 	cooldown := ad.GetCooldown(stats.Name)
@@ -121,7 +122,13 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	if cpuExceeded {
 		// only raise warning if CPU is exceeded and the cooldown is 0.
 		if cooldown.CPU <= 0 {
-			messages = append(messages, fmt.Sprintf("Max %.2f%% CPU exceeded: ", cpuMax)+stats.String())
+			message := fmt.Sprintf("Max %.2f%% CPU exceeded: ", cpuMax) + stats.String()
+			detectionList = append(detectionList, &detections.Detection{
+				Resource:      detections.CPU,
+				Timestamp:     stats.Timestamp,
+				ContainerName: stats.Name,
+				Message:       message,
+			})
 		}
 		cooldown.CPU = ad.cooldownCycles
 	} else {
@@ -135,7 +142,13 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	if memExceeded {
 		// only raise warning if MEM is exceeded and the cooldown is 0.
 		if cooldown.MEM <= 0 {
-			messages = append(messages, fmt.Sprintf("Max %.2f%% MEM exceeded: ", memMax)+stats.String())
+			message := fmt.Sprintf("Max %.2f%% MEM exceeded: ", memMax) + stats.String()
+			detectionList = append(detectionList, &detections.Detection{
+				Resource:      detections.MEM,
+				Timestamp:     stats.Timestamp,
+				ContainerName: stats.Name,
+				Message:       message,
+			})
 		}
 		cooldown.MEM = ad.cooldownCycles
 	} else {
@@ -147,8 +160,8 @@ func (ad *AlarmDetector) Push(stats *stats.Stats) error {
 	}
 
 	// if there's any message, send the batch of notifications.
-	if len(messages) > 0 {
-		go ad.notifyAll(messages)
+	if len(detectionList) > 0 {
+		go ad.notifyAll(detectionList)
 	}
 
 	return nil
@@ -165,10 +178,10 @@ func (ad *AlarmDetector) GetCooldown(name string) *Cooldown {
 	return cooldown
 }
 
-func (ad *AlarmDetector) notifyAll(messages []string) {
+func (ad *AlarmDetector) notifyAll(detections []*detections.Detection) {
 	for _, n := range ad.notifiers {
 		if n != nil {
-			n.Notify(messages)
+			n.Notify(detections)
 		}
 	}
 }
