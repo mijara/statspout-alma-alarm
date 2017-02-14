@@ -77,9 +77,13 @@ func (ad *AlarmDetector) Clear(name string) {
 	ad.influx.Clear(name)
 }
 
-// Close will bypass to InfluxDB's Close method.
+// Close will bypass to InfluxDB's Close method and close all notifiers.
 func (ad *AlarmDetector) Close() {
 	ad.influx.Close()
+
+	for _, notifier := range ad.notifiers {
+		notifier.Close()
+	}
 }
 
 // Create will return a new instance of the detector.
