@@ -28,10 +28,9 @@ type RabbitMQ struct {
 
 // Alarm represent and ALMA Alarm for ElasticSearch indexing.
 type Alarm struct {
-	Timestamp     time.Time `json:"timestamp"`
-	Name          string    `json:"name"`
-	Priority      Priority  `json:"priority"`
-	DetectionTime time.Time `json:"detection_time"`
+	Timestamp time.Time `json:"@timestamp"`
+	Name      string    `json:"path"`
+	Priority  Priority  `json:"priority"`
 
 	Body struct {
 		Message string `json:"message"`
@@ -77,10 +76,9 @@ func NewRabbitMQ(uri, queueName string) *RabbitMQ {
 func (rmq *RabbitMQ) Notify(detections []*detections.Detection) {
 	for _, detection := range detections {
 		alarm := Alarm{
-			Timestamp:     detection.Timestamp.UTC(),
-			Name:          fmt.Sprintf("OFFLINE/%s/%s", detection.ContainerName, detection.Resource),
-			Priority:      CRITICAL,
-			DetectionTime: time.Now().UTC(),
+			Timestamp: detection.Timestamp.UTC(),
+			Name:      fmt.Sprintf("OFFLINE/%s/%s", detection.ContainerName, detection.Resource),
+			Priority:  WARNING,
 		}
 
 		alarm.Body.Message = detection.Message
@@ -91,19 +89,15 @@ func (rmq *RabbitMQ) Notify(detections []*detections.Detection) {
 			return
 		}
 
-		fmt.Println(string(body))
-
-		/*
-			rmq.channel.Publish(
-				"",
-				rmq.queue.Name,
-				false,
-				false,
-				amqp.Publishing{
-					ContentType: "text/plain",
-					Body:        body,
-				})
-		*/
+		rmq.channel.Publish(
+			"",
+			rmq.queue.Name,
+			false,
+			false,
+			amqp.Publishing{
+				ContentType: "text/plain",
+				Body:        body,
+			})
 	}
 }
 
